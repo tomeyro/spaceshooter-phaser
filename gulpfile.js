@@ -1,6 +1,7 @@
-var gulp = require('gulp');
-var ts = require('gulp-typescript');
-var merge = require('merge2');
+var gulp = require('gulp'),
+    ts = require('gulp-typescript'),
+    merge = require('merge2'),
+    connect = require('gulp-connect');
 
 var tsProject = ts.createProject({
   noImplicitAny: true,
@@ -16,7 +17,20 @@ gulp.task('build', function() {
     tsResult.js.pipe(gulp.dest('app'))
   ]);
 });
+ 
+gulp.task('connect', function() {
+  connect.server({
+    root: './',
+    livereload: true
+  });
+});
 
-gulp.task('watch', ['build'], function() {
+gulp.task('reload', function () {
+  gulp.src(['./app/*.html', './app/*.js'])
+    .pipe(connect.reload());
+});
+
+gulp.task('watch', ['build','connect'], function() {
   gulp.watch('app/*.ts', ['build']);
+  gulp.watch(['app/*.js','app/*.html'], ['reload']);
 });
