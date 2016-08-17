@@ -1,0 +1,1 @@
+{"/home/tomeyro/Develop/phaser/spaceshooter/gulpfile.js":{"sha1":"394a635b78c783c34e6355acc1ddcccc8e34dd5e","tasks":{"build":{"name":"build","dependencies":""},"watch":{"name":"watch","dependencies":"build"}}}}

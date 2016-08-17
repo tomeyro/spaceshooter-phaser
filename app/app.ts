@@ -1,9 +1,14 @@
+/// <reference path="../libs/phaser.d.ts" />
+
 var scaleRatio: number = 1;
 
 class SimpleGame {
   constructor() {
     var windowSize = {width: 480, height: 800};
-    this.game = new Phaser.Game(windowSize.width, windowSize.height, Phaser.AUTO, 'content', {
+    let scaleX = (window.innerWidth / windowSize.width) * window.devicePixelRatio;
+    let scaleY = (window.innerHeight / windowSize.height) * window.devicePixelRatio;
+    scaleRatio = (scaleY < scaleX) ? scaleY : scaleX;
+    this.game = new Phaser.Game(windowSize.width*scaleRatio, windowSize.height*scaleRatio, Phaser.AUTO, 'content', {
       preload: this.preload,
       create: this.create,
       update: this.update,
@@ -34,38 +39,61 @@ class SimpleGame {
   create() {
     // Maintain aspect ratio
     this.game.scale.fullScreenScaleMode = Phaser.ScaleManager.SHOW_ALL;
-    this.game.input.onDown.add(SimpleGame.prototype.fullscreen, this);
+    // this.game.input.onDown.add(SimpleGame.prototype.fullscreen, this);
 
     //  Enable p2 physics
     this.game.physics.startSystem(Phaser.Physics.P2JS);
+    //  Turn on impact events for the world, without this we get no collision callbacks
+    this.game.physics.p2.setImpactEvents(true);
 
     // Create sprites
-    this.player = this.game.add.sprite(this.game.world.centerX, this.game.world.height - (48 * scaleRatio), 'player');
+    this.player = this.game.add.sprite(this.game.world.centerX, this.game.world.height - (48 * scaleRatio), 'player');    
     this.player.anchor.setTo(0.5, 0.5);
+    this.player.scale.setTo(scaleRatio, scaleRatio);
 
     this.enemy = this.game.add.sprite(this.game.world.centerX , (48 * scaleRatio), 'enemy');
     this.enemy.anchor.setTo(0.5, 0.5);
+    this.enemy.scale.setTo(scaleRatio, scaleRatio);
 
     this.game.physics.p2.enable([
       this.player,
       this.enemy
     ], true);
 
+    let playerCollisionGroup = this.game.physics.p2.createCollisionGroup();
     this.player.body.clearShapes();
-    this.player.body.loadPolygon('bodies', 'player');
+    this.player.body.addPolygon({}, [[0, this.player.height],[this.player.width, this.player.height],[this.player.width/2, 0]]);
+    this.player.body.fixedRotation = true;
+    this.player.body.setCollisionGroup(playerCollisionGroup);
 
+    let enemyCollisionGroup = this.game.physics.p2.createCollisionGroup();
     this.enemy.body.clearShapes();
-    this.enemy.body.loadPolygon('bodies', 'enemy');
+    this.enemy.body.addPolygon({}, [[0, 0],[this.enemy.width, 0],[this.enemy.width/2, this.enemy.height]]);
     this.enemy.body.velocity.y = 200;
+    this.enemy.body.fixedRotation = true;
+    this.enemy.body.setCollisionGroup(enemyCollisionGroup);
 
     //  Our players bullets
+    let bulletsCollisionGroup = this.game.physics.p2.createCollisionGroup();
     this.bullets = this.game.add.group();
     this.bullets.enableBody = true;
     this.bullets.physicsBodyType = Phaser.Physics.P2JS;
-    //  All 40 of them
-    this.bullets.createMultiple(40, 'bullet');
-    this.bullets.setAll('anchor.x', 0.5);
-    this.bullets.setAll('anchor.y', 0.5);
+    for (let i = 0; i < 40; i++) {
+      let bullet: Phaser.Sprite = this.bullets.create(0, 0, 'bullet', 1, false);
+      bullet.anchor.setTo(0.5, 0.5);
+      bullet.scale.setTo(scaleRatio, scaleRatio);
+      this.game.physics.p2.enable([
+        bullet
+      ], true);
+      bullet.body.clearShapes();
+      bullet.body.addPolygon({}, [[0, bullet.height],[bullet.width, bullet.height],[bullet.width/2, 0]]);
+      bullet.body.fixedRotation = true;
+      bullet.body.setCollisionGroup(bulletsCollisionGroup);
+    }
+
+    // Collisions
+    this.enemy.body.collides([playerCollisionGroup], SimpleGame.prototype.destroyEnemy, this);
+    this.player.body.collides([enemyCollisionGroup], SimpleGame.prototype.destroyEnemy, this);
 
     //  Game input
     this.input.cursors = this.game.input.keyboard.createCursorKeys();
@@ -75,11 +103,11 @@ class SimpleGame {
   }
 
   fullscreen() {
-    // if (this.game.scale.isFullScreen) {
-    //     this.game.scale.stopFullScreen();
-    // } else {
-    //     this.game.scale.startFullScreen(false);
-    // }
+    if (this.game.scale.isFullScreen) {
+        this.game.scale.stopFullScreen();
+    } else {
+        this.game.scale.startFullScreen(false);
+    }
   }
 
   update() {
@@ -95,33 +123,36 @@ class SimpleGame {
     } else {
       this.player.body.velocity.x = 0;
     }
+    if (this.input.cursors.up.isDown) {
+      this.player.body.velocity.y = -200;
+    } else if (this.input.cursors.down.isDown) {
+      this.player.body.velocity.y = 200;
+    } else {
+      this.player.body.velocity.y = 0;
+    }
 
     // Fire
-    // if (this.input.actions.space.isDown) {
-    //   console.log(this.input.actions.space);
-    //   console.log('espacio', this.bulletTime);
-    //   SimpleGame.prototype.fire.apply(this);
-    // }
+    if (this.input.actions.space.isDown) {
+      SimpleGame.prototype.fire.apply(this);
+    }
   }
 
-  destroyEnemy(enemy: Phaser.Sprite, bullet: Phaser.Sprite) {
+  destroyEnemy(enemy: Phaser.Physics.P2.Body, other: Phaser.Physics.P2.Body) {
     console.log('kabooooom!');
-    enemy.destroy();
-    bullet.destroy();
+    enemy.sprite.destroy();
+    other.sprite.destroy();
   }
 
   fire() {
-    // if (!this.bulletTime || this.game.time.now > this.bulletTime) {
-    //   let bullet: Phaser.Sprite = this.bullets.getFirstExists(false);
-    //   if (bullet) {
-    //       bullet.reset(this.player.body.x + (24 * scaleRatio), this.player.body.y - (12 * scaleRatio));
-    //       bullet.lifespan = 2500;
-    //       bullet.rotation = this.player.rotation;
-    //       bullet.body.velocity.set(0, -400);
-    //       this.bulletTime = this.game.time.now + 100;
-    //       console.log(this.bulletTime);
-    //   }
-    // }
+    if (!this.bulletTime || this.game.time.now > this.bulletTime) {
+      let bullet: Phaser.Sprite = this.bullets.getFirstExists(false);
+      if (bullet) {
+          bullet.reset(this.player.body.x + (24 * scaleRatio), this.player.body.y - (12 * scaleRatio));
+          bullet.lifespan = 2500;
+          bullet.body.velocity.y = -400;
+          this.bulletTime = this.game.time.now + 100;
+      }
+    }
   }
 
   render() {

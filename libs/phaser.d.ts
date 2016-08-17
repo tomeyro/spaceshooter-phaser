@@ -4529,7 +4529,7 @@ declare module Phaser {
         angle: number;
         animations: Phaser.AnimationManager;
         autoCull: boolean;
-        body: Phaser.Physics.Arcade.Body | Phaser.Physics.P2.Body | Phaser.Physics.Ninja.Body | any;
+        body: Phaser.Physics.P2.Body;
         bottom: number;
         cameraOffset: Phaser.Point;
         centerX: number;
