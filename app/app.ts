@@ -1,7 +1,7 @@
 /// <reference path="../libs/phaser.d.ts" />
 
 var scaleRatio: number = 1;
-var debug = true;
+var debug = false;
 
 class SimpleGame {
   constructor() {
@@ -17,12 +17,17 @@ class SimpleGame {
   }
 
   game: Phaser.Game;
-  player: Phaser.Sprite;
-  enemy: Phaser.Sprite;
+
+  player: PlayerShip;
+
+  enemies: Phaser.Group;
+  lastEnemy: number;
 
   weapon: Weapon;
   bullets: Phaser.Group;
   bulletTime: number = 0;
+
+  emitter: Phaser.Particles.Arcade.Emitter;
 
   input: any = {
     cursors: {},
@@ -40,7 +45,7 @@ class SimpleGame {
 
   create() {
     // Maintain aspect ratio
-    this.game.scale.fullScreenScaleMode = Phaser.ScaleManager.SHOW_ALL;
+    // this.game.scale.fullScreenScaleMode = Phaser.ScaleManager.SHOW_ALL;
     // this.game.input.onDown.add(SimpleGame.prototype.fullscreen, this);
 
     //  Enable p2 physics
@@ -49,39 +54,22 @@ class SimpleGame {
     this.game.physics.p2.setImpactEvents(true);
 
     // Create sprites
-    this.player = this.game.add.sprite(this.game.world.centerX, this.game.world.height - (48 * scaleRatio), 'player');    
-    this.player.anchor.setTo(0.5, 0.5);
-    this.player.scale.setTo(scaleRatio, scaleRatio);
-
-    this.enemy = this.game.add.sprite(this.game.world.centerX , (48 * scaleRatio), 'enemy');
-    this.enemy.anchor.setTo(0.5, 0.5);
-    this.enemy.scale.setTo(scaleRatio, scaleRatio);
-
-    this.game.physics.p2.enable([
-      this.player,
-      this.enemy
-    ], debug);
-
     let playerCollisionGroup = this.game.physics.p2.createCollisionGroup();
-    this.player.body.clearShapes();
-    this.player.body.addPolygon({}, [[0, this.player.height],[this.player.width, this.player.height],[this.player.width/2, 0]]);
-    this.player.body.fixedRotation = true;
-    this.player.body.setCollisionGroup(playerCollisionGroup);
+    this.player = new PlayerShip(this.game, {x: this.game.world.centerX, y: this.game.world.height - (48 * scaleRatio)}, playerCollisionGroup);
 
     let enemyCollisionGroup = this.game.physics.p2.createCollisionGroup();
-    this.enemy.body.clearShapes();
-    this.enemy.body.addPolygon({}, [[0, 0],[this.enemy.width, 0],[this.enemy.width/2, this.enemy.height]]);
-    this.enemy.body.velocity.y = 200;
-    this.enemy.body.fixedRotation = true;
-    this.enemy.body.setCollisionGroup(enemyCollisionGroup);
-
-    // Weapon
-    this.weapon = new Weapon(this.game, this.player, enemyCollisionGroup);
+    this.enemies = this.game.add.group();
+    for (let i = 0; i < 40; i++) {
+      var enemy = new EnemyShip(this.game, {x: 0, y: 0}, enemyCollisionGroup);
+      enemy.collides([this.player.weapon.getCollisionGroup(), playerCollisionGroup]);
+      enemy.sprite.alive = false;
+      this.enemies.add(enemy.sprite);
+    }
+    this.lastEnemy = 0;
 
     // Collisions
-    this.enemy.body.collides([playerCollisionGroup], SimpleGame.prototype.destroyPlayer, this);
-    this.enemy.body.collides([this.weapon.getCollisionGroup()]);
-    this.player.body.collides([enemyCollisionGroup]);
+    this.player.addFireTarget([enemyCollisionGroup], SimpleGame.prototype.destroyOnCollision, this);
+    this.player.collides([enemyCollisionGroup], SimpleGame.prototype.destroyOnCollision, this);
 
     //  Game input
     this.input.cursors = this.game.input.keyboard.createCursorKeys();
@@ -91,34 +79,48 @@ class SimpleGame {
   }
 
   update() {
-    // Movement
-    if (this.player.alive) {
+    // Create enemies
+    if (this.game.time.now - this.lastEnemy > 1000) {
+      let enemy = <Phaser.Sprite> this.enemies.getFirstDead();
+      if (enemy) {
+        enemy.reset(this.game.world.width * Math.random(), -48 * scaleRatio);
+        enemy.body.velocity.y = (400 - (200 * Math.random())) * scaleRatio;
+        enemy.lifespan = (((this.game.height + (48 * scaleRatio)) / Math.abs(enemy.body.velocity.y)) * 1000) + 1000;
+        this.lastEnemy = this.game.time.now;
+      }
+    }
+
+    if (this.player.sprite.alive) {
+      // Movement
       if (this.input.cursors.left.isDown) {
-        this.player.body.velocity.x = -200;
+        this.player.sprite.body.velocity.x = -(400 * scaleRatio);
       } else if (this.input.cursors.right.isDown) {
-        this.player.body.velocity.x = 200;
+        this.player.sprite.body.velocity.x = (400 * scaleRatio);
       } else {
-        this.player.body.velocity.x = 0;
+        this.player.sprite.body.velocity.x = 0;
       }
       if (this.input.cursors.up.isDown) {
-        this.player.body.velocity.y = -200;
+        this.player.sprite.body.velocity.y = -(400 * scaleRatio);
       } else if (this.input.cursors.down.isDown) {
-        this.player.body.velocity.y = 200;
+        this.player.sprite.body.velocity.y = (400 * scaleRatio);
       } else {
-        this.player.body.velocity.y = 0;
+        this.player.sprite.body.velocity.y = 0;
       }
 
       // Fire
       if (this.input.actions.fire.isDown) {
-        this.weapon.fire();
+        this.player.weapon.fire();
       }
     }
   }
 
-  destroyPlayer(enemy: Phaser.Physics.P2.Body, other: Phaser.Physics.P2.Body) {
-    console.log('kapoooow!');
-    enemy.sprite.destroy();
-    other.sprite.destroy();
+  destroyOnCollision(obj1: Phaser.Physics.P2.Body, obj2: Phaser.Physics.P2.Body) {
+    if (obj1.sprite && obj1.sprite.alive) {
+      obj1.sprite.kill();
+    }
+    if (obj2.sprite && obj2.sprite.alive) {
+      obj2.sprite.kill();
+    }
   }
 
   // fullscreen() {
@@ -130,13 +132,95 @@ class SimpleGame {
   // }
 }
 
-class Weapon {
+class Ship {
+  sprite: Phaser.Sprite;
+  emitter: Phaser.Particles.Arcade.Emitter;
 
+  weapon: Weapon;
+
+  constructor(private game: Phaser.Game, position: {x: number, y: number}, private collisionGroup?: Phaser.Physics.P2.CollisionGroup) {
+    this.sprite = this.game.add.sprite(position.x, position.y, this.getSpriteKey());
+    this.sprite.anchor.setTo(0.5, 0.5);
+    this.sprite.scale.setTo(scaleRatio, scaleRatio);
+
+    this.game.physics.p2.enable([
+      this.sprite
+    ], debug);
+    
+    this.sprite.body.clearShapes();
+    this.sprite.body.addPolygon({}, this.getBodyPolygon());
+    this.sprite.body.x = this.sprite.x;
+    this.sprite.body.y = this.sprite.y;
+    this.sprite.body.fixedRotation = true;
+
+    if (!this.collisionGroup) {
+      this.collisionGroup = this.game.physics.p2.createCollisionGroup();
+    }
+    this.sprite.body.setCollisionGroup(this.collisionGroup);
+
+    this.weapon = new Weapon(this.game, this);
+
+    this.initParticleEmitter();
+    this.sprite.events.onKilled.add(Ship.prototype.explode, this);
+  }
+
+  initParticleEmitter() {
+    this.emitter = this.game.add.emitter(0, 0, 20);
+    this.emitter.makeParticles(this.getSpriteKey());
+    this.emitter.particleAnchor.setTo(0.5, 0.5);
+    this.emitter.setAlpha(1, 0.1, 2000);
+    this.emitter.setScale(scaleRatio / 2, scaleRatio / 4, scaleRatio / 2, scaleRatio / 4, 2000);
+  }
+
+  explode() {
+    this.emitter.x = this.sprite.x;
+    this.emitter.y = this.sprite.y;
+    this.emitter.start(true, 2000, null, 10);
+    if (this.sprite && this.sprite.alive)
+      this.sprite.kill();
+  }
+
+  collides(group: Phaser.Physics.P2.CollisionGroup | Phaser.Physics.P2.CollisionGroup[], callback?: Function, callbackContext?: any) {
+    this.sprite.body.collides(group, callback, callbackContext);
+  }
+
+  addFireTarget(group: Phaser.Physics.P2.CollisionGroup | Phaser.Physics.P2.CollisionGroup[], callback?: Function, callbackContext?: any) {
+    this.weapon.collides(group, callback, callbackContext);
+  }
+
+  getSpriteKey() : string {
+    return "";
+  }
+
+  getBodyPolygon() : number[][] {
+    return [];
+  }
+}
+class EnemyShip extends Ship {
+  getSpriteKey() : string {
+    return "enemy";
+  }
+
+  getBodyPolygon() : number[][] {
+    return [[0, 0], [this.sprite.width, 0], [this.sprite.width / 2, this.sprite.height]];
+  }
+}
+class PlayerShip extends Ship {
+  getSpriteKey() : string {
+    return "player";
+  }
+
+  getBodyPolygon() : number[][] {
+    return [[0, this.sprite.height], [this.sprite.width, this.sprite.height], [this.sprite.width / 2, 0]];
+  }
+}
+
+class Weapon {
   bulletTime: number;
   bullets: Phaser.Group;
   collisionGroup: Phaser.Physics.P2.CollisionGroup;
 
-  constructor(private game: Phaser.Game, private sprite: Phaser.Sprite, private target: Phaser.Physics.P2.CollisionGroup) {
+  constructor(private game: Phaser.Game, private owner: Ship) {
     this.bulletTime = 0;
 
     this.collisionGroup = this.game.physics.p2.createCollisionGroup();
@@ -153,28 +237,25 @@ class Weapon {
       bullet.body.addPolygon({}, [[0, bullet.height],[bullet.width, bullet.height],[bullet.width/2, 0]]);
       bullet.body.fixedRotation = true;
       bullet.body.setCollisionGroup(this.collisionGroup);
-      bullet.body.collides([this.target], Weapon.prototype.destroyTarget, this);
     }
   }
 
   fire() {
-    if (!this.bulletTime || this.game.time.now > this.bulletTime) {
-      console.log('pew!');
+    if (this.owner.sprite && this.owner.sprite.alive && (!this.bulletTime || this.game.time.now > this.bulletTime)) {
       let bullet: Phaser.Sprite = this.bullets.getFirstExists(false);
       if (bullet) {
-          bullet.reset(this.sprite.body.x, this.sprite.body.y);
-          bullet.lifespan = 2500;
-          bullet.body.velocity.y = -400;
-          bullet.body.velocity.x = Math.random()*100 + (Math.random() > 0.5 ? 1 : -1);
-          this.bulletTime = this.game.time.now + 100;
+        bullet.reset(this.owner.sprite.body.x, this.owner.sprite.body.y);
+        bullet.body.velocity.y = -550 * scaleRatio;
+        bullet.lifespan = ((this.owner.sprite.y / Math.abs(bullet.body.velocity.y)) * 1000) + 500;
+        this.bulletTime = this.game.time.now + 250;
       }
     }
   }
 
-  destroyTarget(bullet: Phaser.Physics.P2.Body, target: Phaser.Physics.P2.Body) {
-    console.log('kabooooom!');
-    bullet.sprite.destroy();
-    target.sprite.destroy();
+  collides(group: Phaser.Physics.P2.CollisionGroup | Phaser.Physics.P2.CollisionGroup[], callback?: Function, callbackContext?: any) {
+    for (let k in this.bullets.children) {
+      (<Phaser.Sprite> this.bullets.children[k]).body.collides(group, callback, callbackContext);
+    }
   }
 
   getCollisionGroup() {
