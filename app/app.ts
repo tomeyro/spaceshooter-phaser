@@ -23,24 +23,18 @@ class SimpleGame {
   enemies: Phaser.Group;
   lastEnemy: number;
 
-  weapon: Weapon;
-  bullets: Phaser.Group;
-  bulletTime: number = 0;
-
-  emitter: Phaser.Particles.Arcade.Emitter;
-
   input: any = {
     cursors: {},
     actions: {}
   };
 
   preload() {
-    this.game.load.image('logo', '../res/logo.png');
     this.game.load.image('player', '../res/player.png');
     this.game.load.image('enemy', '../res/enemy.png');
     this.game.load.image('bullet', '../res/bullet.png');
-    //  Load our physics data exported from PhysicsEditor
-    this.game.load.physics('bodies', '../res/bodies.json');
+
+    this.game.load.audio('explosion', '../res/explosion.mp3');
+    this.game.load.audio('laser', '../res/laser.mp3');
   }
 
   create() {
@@ -60,9 +54,9 @@ class SimpleGame {
     let enemyCollisionGroup = this.game.physics.p2.createCollisionGroup();
     this.enemies = this.game.add.group();
     for (let i = 0; i < 40; i++) {
-      var enemy = new EnemyShip(this.game, {x: 0, y: 0}, enemyCollisionGroup);
+      var enemy = new EnemyShip(this.game, {x: -48 * scaleRatio, y: - 48 * scaleRatio}, enemyCollisionGroup);
       enemy.collides([this.player.weapon.getCollisionGroup(), playerCollisionGroup]);
-      enemy.sprite.alive = false;
+      enemy.sprite.kill();
       this.enemies.add(enemy.sprite);
     }
     this.lastEnemy = 0;
@@ -83,12 +77,22 @@ class SimpleGame {
     if (this.game.time.now - this.lastEnemy > 1000) {
       let enemy = <Phaser.Sprite> this.enemies.getFirstDead();
       if (enemy) {
-        enemy.reset(this.game.world.width * Math.random(), -48 * scaleRatio);
+        let x = this.game.world.width * Math.random();
+        if (x <= enemy.width / 2) {
+          x = (enemy.width / 2) + (enemy.width / 4);
+        } else if (x >= this.game.world.width - (enemy.width / 2)) {
+          x = this.game.world.width - (enemy.width / 2) - (enemy.width / 4);
+        }
+        enemy.reset(x, -enemy.height / 2);
         enemy.body.velocity.y = (400 - (200 * Math.random())) * scaleRatio;
-        enemy.lifespan = (((this.game.height + (48 * scaleRatio)) / Math.abs(enemy.body.velocity.y)) * 1000) + 1000;
         this.lastEnemy = this.game.time.now;
       }
     }
+    this.enemies.forEachAlive((enemy: Phaser.Sprite) => {
+      if (enemy.alive && (enemy.y > (this.game.world.height + enemy.height) || enemy.x < enemy.width / 2 || enemy.x > this.game.world.width - (enemy.width / 2))) {
+        enemy.alive = false;
+      }
+    }, this);
 
     if (this.player.sprite.alive) {
       // Movement
@@ -132,6 +136,7 @@ class SimpleGame {
   // }
 }
 
+// Extend from Sprite
 class Ship {
   sprite: Phaser.Sprite;
   emitter: Phaser.Particles.Arcade.Emitter;
@@ -176,6 +181,7 @@ class Ship {
     this.emitter.x = this.sprite.x;
     this.emitter.y = this.sprite.y;
     this.emitter.start(true, 2000, null, 10);
+    this.game.sound.play("explosion");
     if (this.sprite && this.sprite.alive)
       this.sprite.kill();
   }
@@ -248,6 +254,7 @@ class Weapon {
         bullet.body.velocity.y = -550 * scaleRatio;
         bullet.lifespan = ((this.owner.sprite.y / Math.abs(bullet.body.velocity.y)) * 1000) + 500;
         this.bulletTime = this.game.time.now + 250;
+        this.game.sound.play("laser");
       }
     }
   }
